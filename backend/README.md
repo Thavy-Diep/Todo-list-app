@@ -31,6 +31,42 @@
 $ npm install
 ```
 
+## Authentication and database setup
+
+The API uses the PostgreSQL database configured by environment variables. In
+PowerShell, copy `.env.example` to `.env` in this directory:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Set the connection values to match your PostgreSQL container. Keep `.env`
+private; use two different, randomly generated secrets for `JWT_ACCESS_SECRET`
+and `JWT_REFRESH_SECRET`.
+
+Apply the schema migration before starting the API:
+
+```bash
+npm run migration:run
+npm run start:dev
+```
+
+The migration adds users, hashed refresh-token storage, and task ownership. Any
+tasks that existed before user accounts are created remain in the database
+without an owner and are not shown in a user's task list.
+
+The React app runs separately from the `frontend` directory:
+
+```bash
+npm install
+npm run dev
+```
+
+Create an account in the app, then sign in. The API exposes public
+`POST /auth/signup`, `POST /auth/login`, and `POST /auth/refresh` endpoints.
+Todo endpoints require a bearer access token; task ownership is derived from
+that authenticated user.
+
 ## Compile and run the project
 
 ```bash

@@ -1,52 +1,46 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, HttpCode, ParseIntPipe } from '@nestjs/common';
-import { TodosService } from './todos.service.js';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+} from '@nestjs/common';
+import type { AuthUser } from '../auth/types/auth-user.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { CreateTodoDto } from './dto/create-todo.dto.js';
 import { UpdateTodoDto } from './dto/update-todo.dto.js';
-
+import { TodosService } from './todos.service.js';
 
 @Controller('todos')
 export class TodosController {
   constructor(private readonly todos: TodosService) {}
 
-//   @Post()
-//   create(@Body() createTodoDto: CreateTodoDto) {
-//     return this.todosService.create(createTodoDto);
-//   }
-
-//   @Get()
-//   findAll() {
-//     return this.todosService.findAll();
-//   }
-
-//   @Get(':id')
-//   findOne(@Param('id') id: string) {
-//     return this.todosService.findOne(+id);
-//   }
-
-//   @Patch(':id')
-//   update(@Param('id') id: string, @Body() updateTodoDto: UpdateTodoDto) {
-//     return this.todosService.update(+id, updateTodoDto);
-//   }
-
-//   @Delete(':id')
-//   remove(@Param('id') id: string) {
-//     return this.todosService.remove(+id);
-//   }
-// }
-
   @Get()
-  findAll() { return this.todos.findAll(); }
+  findAll(@CurrentUser() user: AuthUser) {
+    return this.todos.findAll(user);
+  }
+
   @Post()
-  create(@Body() dto: CreateTodoDto) {
-    return this.todos.create(dto); // 201 by default
+  create(@Body() dto: CreateTodoDto, @CurrentUser() user: AuthUser) {
+    return this.todos.create(dto, user);
   }
-  @Patch(":id")
-  update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateTodoDto) {
-    return this.todos.update(id, dto);
+
+  @Patch(':id')
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateTodoDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.todos.update(id, dto, user);
   }
-  @Delete(":id")
+
+  @Delete(':id')
   @HttpCode(204)
-  remove(@Param("id", ParseIntPipe) id: number) {
-    return this.todos.remove(id);
+  remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: AuthUser) {
+    return this.todos.remove(id, user);
   }
-  }
+}

@@ -1,4 +1,11 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateTodoDto {
   @IsString()
@@ -9,4 +16,8 @@ export class CreateTodoDto {
   @IsOptional()
   @IsIn(['TODO', 'IN_PROGRESS', 'DONE'])
   status?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  priority?: boolean;
 }

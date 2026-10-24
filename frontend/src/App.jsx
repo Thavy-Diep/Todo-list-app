@@ -1,6 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
+import AuthScreen from "./AuthScreen.jsx";
+import {
+  apiRequest,
+  restoreSession,
+  responseError,
+  setAccessToken,
+} from "./api.js";
 
-const API = "http://localhost:3000/todos";
+const API = "/todos";
 
 const statusLabels = {
   todo: "To Do",
@@ -38,9 +45,9 @@ function normalizeTodo(todo) {
 }
 
 async function getTodos(signal) {
-  const response = await fetch(API, { signal });
+  const response = await apiRequest(API, { signal });
   if (!response.ok) {
-    throw new Error(`Unable to load tasks (HTTP ${response.status}).`);
+    throw new Error(await responseError(response, "Unable to load tasks"));
   }
 
   const data = await response.json();
@@ -83,6 +90,8 @@ function Icon({ name, size = 18, strokeWidth = 1.8 }) {
 }
 
 function App() {
+  const [user, setUser] = useState(null);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [todos, setTodos] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -101,19 +110,67 @@ function App() {
   useEffect(() => {
     const controller = new AbortController();
 
-    getTodos(controller.signal)
-      .then(setTodos)
-      .catch((error) => {
-        if (error.name !== "AbortError") {
-          setRequestError(error.message);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false);
-      });
+    const handleExpiredSession = () => {
+      setAccessToken(null);
+      setUser(null);
+      setTodos([]);
+      setSelectedIds([]);
+    };
+    window.addEventListener("todo-auth-expired", handleExpiredSession);
 
-    return () => controller.abort();
+    async function initialize() {
+      try {
+        const session = await restoreSession();
+        if (!session || controller.signal.aborted) return;
+        setUser(session.user);
+        setTodos(await getTodos(controller.signal));
+      } catch (error) {
+        if (error.name !== "AbortError") setRequestError(error.message);
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+          setIsCheckingSession(false);
+        }
+      }
+    }
+
+    initialize();
+
+    return () => {
+      controller.abort();
+      window.removeEventListener("todo-auth-expired", handleExpiredSession);
+    };
   }, []);
+
+  async function handleAuthenticated(session) {
+    setAccessToken(session.accessToken);
+    setUser(session.user);
+    setRequestError("");
+    setIsLoading(true);
+    try {
+      setTodos(await getTodos());
+    } catch (error) {
+      setRequestError(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function logout() {
+    setRequestError("");
+    try {
+      const response = await apiRequest("/auth/logout", { method: "POST" });
+      if (!response.ok) {
+        throw new Error(await responseError(response, "Unable to sign out"));
+      }
+      setAccessToken(null);
+      setUser(null);
+      setTodos([]);
+      setSelectedIds([]);
+    } catch (error) {
+      setRequestError(error.message);
+    }
+  }
 
   const counts = useMemo(
     () => ({
@@ -166,10 +223,50 @@ function App() {
     }
   }
 
-  function deleteTodos(ids) {
-    const deletedIds = new Set(ids);
-    setTodos((current) => current.filter((todo) => !deletedIds.has(todo.id)));
-    setSelectedIds((current) => current.filter((id) => !deletedIds.has(id)));
+  async function deleteTodos(ids) {
+    setRequestError("");
+    try {
+      await Promise.all(
+        ids.map(async (id) => {
+          const response = await apiRequest(`${API}/${id}`, { method: "DELETE" });
+          if (!response.ok) {
+            throw new Error(await responseError(response, "Unable to delete task"));
+          }
+        }),
+      );
+      const deletedIds = new Set(ids);
+      setTodos((current) => current.filter((todo) => !deletedIds.has(todo.id)));
+      setSelectedIds((current) => current.filter((id) => !deletedIds.has(id)));
+    } catch (error) {
+      setRequestError(error.message);
+      try {
+        setTodos(await getTodos());
+      } catch (reloadError) {
+        setRequestError(reloadError.message);
+      }
+    }
+  }
+
+  async function updateTodo(id, updates) {
+    setRequestError("");
+    try {
+      const response = await apiRequest(`${API}/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          ...updates,
+          ...(updates.status ? { status: apiStatuses[updates.status] } : {}),
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await responseError(response, "Unable to update task"));
+      }
+      const updatedTodo = normalizeTodo(await response.json());
+      setTodos((current) =>
+        current.map((todo) => (todo.id === updatedTodo.id ? updatedTodo : todo)),
+      );
+    } catch (error) {
+      setRequestError(error.message);
+    }
   }
 
   async function saveTodo(event) {
@@ -181,46 +278,47 @@ function App() {
 
     if (!title) return;
 
-    if (modal?.mode === "edit") {
-      setTodos((current) =>
-        current.map((todo) =>
-          todo.id === modal.todo.id
-            ? { ...todo, title, status, priority }
-            : todo,
-        ),
-      );
-      setModal(null);
-      return;
-    }
-
     setIsSaving(true);
     setRequestError("");
     try {
-      const response = await fetch(API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, status: apiStatuses[status] }),
-      });
+      const isEditing = modal?.mode === "edit";
+      const response = await apiRequest(
+        isEditing ? `${API}/${modal.todo.id}` : API,
+        {
+          method: isEditing ? "PATCH" : "POST",
+          body: JSON.stringify({
+            title,
+            status: apiStatuses[status],
+            priority,
+          }),
+        },
+      );
       if (!response.ok) {
-        throw new Error(`Unable to create task (HTTP ${response.status}).`);
+        throw new Error(
+          await responseError(
+            response,
+            isEditing ? "Unable to update task" : "Unable to create task",
+          ),
+        );
       }
 
-      try {
-        const createdTodo = normalizeTodo(await response.json());
-        setTodos((current) => [createdTodo, ...current]);
-      } catch (error) {
-        if (error instanceof SyntaxError) {
-          setTodos(await getTodos());
-        } else {
-          throw error;
-        }
-      }
+      const savedTodo = normalizeTodo(await response.json());
+      setTodos((current) =>
+        isEditing
+          ? current.map((todo) => (todo.id === savedTodo.id ? savedTodo : todo))
+          : [savedTodo, ...current],
+      );
       setModal(null);
     } catch (error) {
       setRequestError(error.message);
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function updateSelectedStatus(status) {
+    const ids = [...selectedIds];
+    void Promise.all(ids.map((id) => updateTodo(id, { status })));
   }
 
   function moveTodo(targetId) {
@@ -260,6 +358,20 @@ function App() {
             ? "In progress"
             : "Completed";
 
+  const initials = user?.email?.slice(0, 2).toUpperCase() ?? "U";
+
+  if (isCheckingSession) {
+    return <main className="auth-screen"><p className="loading-message">Restoring your session…</p></main>;
+  }
+  if (!user) {
+    return (
+      <AuthScreen
+        onAuthenticated={handleAuthenticated}
+        statusMessage={requestError}
+      />
+    );
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -270,7 +382,7 @@ function App() {
 
         <div className="workspace-label">WORKSPACE</div>
         <div className="workspace-switcher">
-          <span className="workspace-avatar">D</span>
+          <span className="workspace-avatar">{initials.slice(0, 1)}</span>
           <span className="workspace-name">Personal space</span>
           <span className="workspace-chevron">⌄</span>
         </div>
@@ -307,13 +419,13 @@ function App() {
         </div>
 
         <div className="profile-card">
-          <div className="profile-avatar">TD</div>
+          <div className="profile-avatar">{initials}</div>
           <div className="profile-copy">
-            <strong>Thavy Diep</strong>
+            <strong>{user.email}</strong>
             <span>Personal account</span>
           </div>
-          <button className="icon-button profile-more" type="button" aria-label="Account options">
-            <Icon name="more" size={19} />
+          <button className="icon-button profile-more" onClick={logout} type="button" aria-label="Sign out">
+            Sign out
           </button>
         </div>
       </aside>
@@ -323,7 +435,15 @@ function App() {
           <div className="breadcrumb">My workspace <Icon name="chevron" size={13} /> <span>Tasks</span></div>
           <div className="topbar-right">
             <span className="today-label"><span className="today-dot" /> Your personal task space</span>
-            <div className="top-avatar" aria-label="Thavy Diep">TD</div>
+            <button
+              className="top-avatar"
+              onClick={logout}
+              title="Sign out"
+              type="button"
+              aria-label={`Sign out ${user.email}`}
+            >
+              {initials}
+            </button>
           </div>
         </header>
 
@@ -332,7 +452,7 @@ function App() {
             <div>
               <p className="eyebrow">{today}</p>
               <h1>Good things take <span>time.</span></h1>
-              <p className="welcome-subtitle">One step at a time, Thavy. You’re doing great.</p>
+              <p className="welcome-subtitle">One step at a time. You’re doing great.</p>
             </div>
             <button className="primary-button" onClick={() => setModal({ mode: "create" })} type="button">
               <Icon name="plus" size={18} strokeWidth={2.2} />
@@ -401,12 +521,7 @@ function App() {
                   defaultValue=""
                   onChange={(event) => {
                     if (!event.target.value) return;
-                    const status = event.target.value;
-                    setTodos((current) =>
-                      current.map((todo) =>
-                        selectedIds.includes(todo.id) ? { ...todo, status } : todo,
-                      ),
-                    );
+                    updateSelectedStatus(event.target.value);
                     event.target.value = "";
                   }}
                 >
@@ -423,9 +538,7 @@ function App() {
             )}
 
             <div className="todo-list">
-              {requestError && (
-                <p className="request-error" role="alert">{requestError}</p>
-              )}
+              {requestError && <p className="request-error" role="alert">{requestError}</p>}
               {isLoading && <p className="loading-message">Loading tasks…</p>}
               {filteredTodos.map((todo) => (
                 <article
@@ -450,11 +563,7 @@ function App() {
                     <span className="drag-handle" aria-label="Drag to reorder">
                       <Icon name="grip" size={16} />
                     </span>
-                    <button
-                      className="todo-title"
-                      onClick={() => setModal({ mode: "edit", todo })}
-                      type="button"
-                    >
+                    <button className="todo-title" onClick={() => setModal({ mode: "edit", todo })} type="button">
                       {todo.title}
                     </button>
                   </div>
@@ -464,15 +573,7 @@ function App() {
                       <select
                         aria-label={`Status for ${todo.title}`}
                         className={`status-select status-text-${todo.status}`}
-                        onChange={(event) =>
-                          setTodos((current) =>
-                            current.map((item) =>
-                              item.id === todo.id
-                                ? { ...item, status: event.target.value }
-                                : item,
-                            ),
-                          )
-                        }
+                        onChange={(event) => updateTodo(todo.id, { status: event.target.value })}
                         value={todo.status}
                       >
                         {Object.entries(statusLabels).map(([value, label]) => (
@@ -484,15 +585,7 @@ function App() {
                       aria-label={todo.priority ? `Remove priority from ${todo.title}` : `Mark ${todo.title} as priority`}
                       aria-pressed={todo.priority}
                       className={`priority-button ${todo.priority ? "is-priority" : ""}`}
-                      onClick={() =>
-                        setTodos((current) =>
-                          current.map((item) =>
-                            item.id === todo.id
-                              ? { ...item, priority: !item.priority }
-                              : item,
-                          ),
-                        )
-                      }
+                      onClick={() => updateTodo(todo.id, { priority: !todo.priority })}
                       type="button"
                     >
                       <Icon name="star" size={17} />
@@ -565,7 +658,7 @@ function App() {
               className="title-input"
               defaultValue={modal.todo?.title ?? ""}
               id="task-title"
-              maxLength={120}
+              maxLength={200}
               name="title"
               placeholder="What would you like to get done?"
               required

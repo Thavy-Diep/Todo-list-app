@@ -1,5 +1,109 @@
 @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap");
 
+.auth-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top right, #eee9ff 0, transparent 32rem),
+    #f7f7f5;
+}
+
+.auth-card {
+  width: min(100%, 420px);
+  padding: 34px;
+  border: 1px solid #eeedeb;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 22px 70px #26304212;
+}
+
+.auth-brand {
+  margin: 0 0 38px;
+  color: var(--ink);
+}
+
+.auth-card .eyebrow {
+  margin-bottom: 10px;
+  color: #7861ce;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+}
+
+.auth-card h1 {
+  margin: 0;
+  font: 800 27px "Manrope", sans-serif;
+  letter-spacing: -1px;
+}
+
+.auth-description {
+  margin: 8px 0 26px;
+  color: #858b95;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.auth-card .form-label {
+  display: block;
+  margin: 17px 0 7px;
+  color: #555d68;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.auth-card input {
+  width: 100%;
+  height: 42px;
+  padding: 0 11px;
+  border: 1px solid #e4e3e2;
+  border-radius: 7px;
+  color: var(--ink);
+  background: #fff;
+}
+
+.auth-submit {
+  width: 100%;
+  justify-content: center;
+  margin-top: 22px;
+}
+
+.auth-submit:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.auth-switch {
+  margin: 18px 0 0;
+  color: #878d96;
+  font-size: 11px;
+  text-align: center;
+}
+
+.auth-switch button {
+  padding: 0;
+  border: 0;
+  color: #7055cf;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.auth-message {
+  margin: 13px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.auth-error {
+  color: #bd4545;
+}
+
+.auth-notice {
+  color: #34815c;
+}
+
 :root {
   font-family: "DM Sans", sans-serif;
   color: #232b36;
@@ -242,12 +346,15 @@ select:focus-visible {
   display: grid;
   flex: 1;
   gap: 3px;
+  overflow: hidden;
 }
 
 .profile-copy strong {
+  overflow: hidden;
   color: #f4f4f6;
   font-size: 11px;
   font-weight: 600;
+  text-overflow: ellipsis;
 }
 
 .profile-copy span {
@@ -275,12 +382,21 @@ select:focus-visible {
 }
 
 .profile-more {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0 7px;
   color: #a2aab5;
+  font-size: 10px;
 }
 
 .profile-more:hover {
   color: #fff;
   background: #353f4c;
+}
+
+.top-avatar {
+  border: 0;
+  cursor: pointer;
 }
 
 .main-content {
